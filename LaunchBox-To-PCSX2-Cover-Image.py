@@ -61,8 +61,6 @@ import xml.etree.ElementTree as ET
 #       will be saved in the XML settings_file.
 launchbox_root = rf'{ENV.get("ProgramFiles")}\LaunchBox'
 pcsx2_root = rf'{ENV.get("ProgramFiles")}\PCSX2'
-#launchbox_root = rf'D:\Apps\LaunchBox'
-#pcsx2_root = rf'D:\Games\Emulators\PCSX2-v1.7.0-dev'
 
 # Choose what category of images to use. ("Box - Front" is the front cover box art.)
 # Note: More categories can be found in LaunchBox's image directories.
@@ -661,7 +659,6 @@ def multiSelectionMenu(labels: list, choices: list, not_found_choice: str = '', 
 ###     (sort) Sort full list of games alphabetically.
 ###     --> Returns a [bool] Success or Failure
 def createListOfPCSX2Games(sort: bool = False) -> bool:
-    #global pcsx2_game_list
     if_error_file_path = pcsx2_game_database
     
     # The data from below cache file can reliably read game id/serials and disc paths, but not game titles.
@@ -787,8 +784,8 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
         for disc_path in custom_titles.sections():
             if 'Title' in custom_titles[disc_path]:
                 custom_game_title = custom_titles.get(disc_path, 'Title')
-                ## Skip custom titles with square bracket chacaters.
-                ## This is a temporary fix, REMOVE if PCSX2 fixes it's custom title issue.
+                ## Skip custom disc names with square bracket characters.
+                ## This is a temporary fix, REMOVE if PCSX2 fixes its custom title issue.
                 if custom_game_title.find('[') == -1 and custom_game_title.find(']') == -1:
                     i = getListIndexOf(disc_path, users_pcsx2_game_list, DISC_PATH)
                     users_pcsx2_game_list[i][TITLE] = custom_game_title
@@ -800,10 +797,6 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
         print(f'ERROR: {e}')
         print('Custom PCSX2 game titles will not be shown or used.')
         # Note: It's ok if this fails... return True
-    
-    '''# Print List Test
-    printGames('PCSX2', True)
-    #'''#
     
     return True
 
@@ -1229,10 +1222,10 @@ def printHelp():
     print('  [settings] Will show all the changeable settings in this script.')
     print('\nOther Details:')
     print('  Type "*" after any search to use the previous options already selected for any')
-    print('  found Title and Disc. Used to speed through back-and-forth image changes.')
-    print('  Shorthand: "LB" == "LaunchBox", "PS" = "PCSX2", "*" = "Settings"')
+    print('  found game title or disc. Used to speed through back-and-forth image changes.')
+    print('  Shorthand: "LB" = "LaunchBox", "PS" = "PCSX2", "*" = "Settings"')
     print('  The "show" command is usable at every input prompt.')
-    print('  Leave the "--->" input prompt blank and press the "Enter" key to close this window.\n')
+    print('  Leave the "--->" input prompt blank and press the "Enter" key to close this window.')
 
 
 ### Print out LaunchBox or PCSX2 PS2 game list.
@@ -1260,6 +1253,8 @@ def printGames(app: str, show_id: bool = False):
 
 ### Open a directory for user to see or make changes manually.
 def openDirectory(directory_path: str):
+    if directory_path == '.ALL' and len(launchbox_media_type_list):
+        directory_path = str(Path(launchbox_media_type_list[0][PATH]).parent)
     platform = System.platform
     if platform == 'win32':
         Open(f'explorer "{directory_path}"')
@@ -1387,9 +1382,10 @@ if __name__ == '__main__':
                         )
                         searchable_title_words = []
                         for part in segmented_game_title:
-                            if RE.fullmatch(r'\d+', part):
+                            # Only search for numbers and 3+ letter words.
+                            if RE.fullmatch(r'\d+|i|ii|iv|v|vi|ix|x|xi', part):
                                 searchable_title_words.append(part)
-                            elif (len(part) > 2): # Do not search for 1-2 letter words
+                            elif (len(part) > 2):
                                 searchable_title_words.append(part)
                         
                         # Use split-up LaunchBox game title to search for a proper PCSX2 game title.
@@ -1399,14 +1395,14 @@ if __name__ == '__main__':
                             skipped_words = 0
                             for word in searchable_title_words:
                                 if word in pcsx2_game_title.lower():
-                                    if word == 'The' or RE.fullmatch(r'\d+', part):
+                                    # "The" and numbers will give too many results if they are the only words found.
+                                    if RE.fullmatch(r'the|\d+|i|ii|iv|v|vi|ix|x|xi', word):
                                         skipped_words += 1
                                     found_words += 1
                             if found_words == len(searchable_title_words): # All Words Matched
                                 if pcsx2_game_title not in full_matched_game_list:
                                     full_matched_game_list.append(pcsx2_game_title)
                             else:
-                                # "The" and numbers will give too many results if they are the only words found.
                                 found_words -= skipped_words
                                 if found_words >= Math.ceil(len(searchable_title_words) / 2): # 50%+ Words Matched
                                     high_probability_game_list.append(pcsx2_game_title)
@@ -1584,7 +1580,6 @@ if __name__ == '__main__':
                                                 existing_images.pop(i)
                                             existing_images.append(temp_existing_image)
                                     
-                                    ## TODO: maybe remove this, why allow renaming? The rename is going to be worng anyways... right?
                                     # Rename cover image file... again.
                                     elif selection == 2:
                                         new_cover_image_name = ''
