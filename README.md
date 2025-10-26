@@ -1,4 +1,4 @@
-### **LaunchBox Image To PCSX2 Cover Image**
+### LaunchBox Image To PCSX2 Cover Image
 ***by JDHatten***
 
 ---
