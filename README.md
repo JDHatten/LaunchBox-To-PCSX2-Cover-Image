@@ -1,10 +1,10 @@
-### LaunchBox Image To PCSX2 Cover Image
-***by JDHatten***
+### LaunchBox To PCSX2 Cover Image
+&nbsp; &nbsp; ***by JDHatten***
 
 ---
 
 ### Description:
-This script will copy and resize PlayStation 2 LaunchBox images and save them to the PCSX2 cover image folder.
+&nbsp; &nbsp; This script will copy and resize PlayStation 2 LaunchBox images and save them to the PCSX2 cover image folder.
 
 ### To Use:
 - First, make sure root paths are correct in the running script.
