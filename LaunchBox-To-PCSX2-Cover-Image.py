@@ -42,7 +42,7 @@ try:
     pillow_installed = True
 except ModuleNotFoundError:
     pillow_installed = False
-from os import environ as ENV
+from os import environ as ENV, get_terminal_size as TSize
 import re as RE
 from shutil import copy2 as CopyFile
 from subprocess import Popen as Open
@@ -92,7 +92,7 @@ pcsx2_game_database = rf'{pcsx2_root}\resources\GameIndex.yaml'
 # File with all user's PS2 games scanned and recognized by PCSX2.
 pcsx2_game_list_file = rf'{pcsx2_root}\cache\gamelist.cache'
 
-# Used to get any custom game titles and update the "users_pcsx2_game_list".
+# Used to get any custom game titles and update the "pcsx2_user_game_list".
 # Note: PCSX2 stores file paths in config (ini file) section headings. This is bad for file names
 #       using [square brackets], which is a common naming convention for modified/hacked games.
 #       While this script can account for this error and still name the image with the proper
@@ -115,20 +115,24 @@ launchbox_image_folder = rf'{launchbox_root}\Images\Sony Playstation 2\{lauchbox
 #       characters in the game titles to search through.
 only_english_characters_in_game_list = True
 
+# Only recognize Roman numerals if they are capitalized/uppercase.
+uppercase_roman_numerals_only = True
+
 ROOT = Path(__file__).parent
 pcsx2_game_database = Path(pcsx2_game_database)
 pcsx2_custom_game_title_file = Path(pcsx2_custom_game_title_file)
 pcsx2_settings_file = Path(pcsx2_settings_file)
 full_pcsx2_game_list_file = ROOT / 'full_pcsx2_game_list.txt'
 settings_file = ROOT / f'{Path(__file__).stem}-Settings.xml'
-pcsx2_game_list = []
-users_pcsx2_game_list = []      # [ [ ID, TITLE, DISC_PATH ],...]
+pcsx2_full_game_list = []
+pcsx2_user_game_list = []       # [ [ ID, TITLE, DISC_PATH ],...]
 lauchbox_game_list = []         # [ [ ID, TITLE, DISC_PATH ],...]
 launchbox_media_type_list = []  # [ [ TYPE, PATH ],...]
 supported_images = ['.jpg','.jpeg', '.jpe', '.png', '.webp']
-roman_numerals_list = ['0','i','ii','iii','iv','v','vi','vii','viii','ix','x','xi','xii','xiii','xiv','xv','xvi','xvii','xviii','xix','xx']
+roman_numerals_list = ['0','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX']
 arabic_numerals_list = ['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20']
 re_roman_numerals = RE.compile(r'\b(xx|xix|xviii|xvii|xvi|xiv|xiii|xii|xi|ix|viii|vii|vi|iv|xv|x|v|iii|ii|i)\b')
+RE_ROMAN_NUMERALS = RE.compile(r'\b(XX|XIX|XVIII|XVII|XVI|XIV|XIII|XII|XI|IX|VIII|VII|VI|IV|XV|X|V|III|II|I)\b')
 re_numbers = RE.compile(r'\b([0-9]|1[0-9]|20)\b')
 
 # Constants
@@ -200,7 +204,7 @@ def updatePathsUsing(changed_path: int):
         
         # Build list of PCSX2 game titles
         # Note: This is a must to properly match naming conventions between LaunchBox and PCSX2.
-        if createListOfPCSX2Games(): # -> users_pcsx2_game_list
+        if createListOfPCSX2Games(): # -> pcsx2_user_game_list
             
             # Get any needed PCSX2 folder settings
             if Path(pcsx2_settings_file).exists():
@@ -387,7 +391,7 @@ def modifyImageSize(org_image_shape: (int, int), image_size_modifications: list,
         
         if image_size_modifications[WIDTH][MODIFIER] == MODIFY_BY_PERCENT:
             if type(image_size_modifications[WIDTH][NUMBER]) == str:
-                percent_number = re_number_compiled_pattern.search(image_size_modifications[WIDTH][NUMBER])
+                percent_number = RE.search(r'\d*\.?\d*', image_size_modifications[WIDTH][NUMBER])
                 if percent_number:
                     multipler = float(percent_number).group().strip() / 100
                     new_width = org_image_shape[WIDTH] * multipler
@@ -430,7 +434,7 @@ def modifyImageSize(org_image_shape: (int, int), image_size_modifications: list,
         
         if image_size_modifications[HEIGHT][MODIFIER] == MODIFY_BY_PERCENT:
             if type(image_size_modifications[HEIGHT][NUMBER]) == str:
-                percent_number = re_number_compiled_pattern.search(image_size_modifications[HEIGHT][NUMBER])
+                percent_number = RE.search(r'\d*\.?\d*', image_size_modifications[HEIGHT][NUMBER])
                 if percent_number:
                     multipler = float(percent_number.group().strip()) / 100
                     new_height = org_image_shape[HEIGHT] * multipler
@@ -526,9 +530,9 @@ def getListIndexOf(value: str, in_list: list, multi_level_key: int = -1) -> int:
 ###     (key) Key repersenting the value ID or DISC_PATH.
 ###     --> Returns a [str] Game Title
 def getPCSX2GameTitleFrom(value: str, key: int) -> str:
-    i = getListIndexOf(value, users_pcsx2_game_list, key)
+    i = getListIndexOf(value, pcsx2_user_game_list, key)
     if i > -1:
-        return users_pcsx2_game_list[i][TITLE]
+        return pcsx2_user_game_list[i][TITLE]
     else:
         return ''
 
@@ -537,30 +541,36 @@ def getPCSX2GameTitleFrom(value: str, key: int) -> str:
 ###     (labels) A list of lines of strings describing the menu.
 ###     (choices) A list options for the user to select.
 ###     (not_found_choice) Optional selection string to signify "none of the above options is correct".
-###     (columns) Print out options in multiple columns.
+###     (columns) Print out options in multiple columns (up to a maximum menu width).
 ###     --> Returns a [int]
 def selectionMenu(labels: list, choices: list, not_found_choice: str = '', columns: int = 1) -> int:
     first_choice = 0 if len(not_found_choice) else 1
-    max_spaces = 0
+    max_column_width = 0
+    
     if columns > 1:
         for choice in choices:
             length = len(choice) + 8
-            if length > max_spaces:
-                max_spaces = length
+            if length > max_column_width:
+                max_column_width = length
     
     while True:
         n = 0
+        row = ''
+        
+        # If current menu/terminal width is too small for multiple columns, remove a column.
+        current_column_count = columns
+        while current_column_count > 1 and TSize().columns < max_column_width * current_column_count:
+            current_column_count -= 1
         
         for label in labels:
             print(f'{label}')
         
-        row = ''
         for choice in choices:
             n += 1
             row += f'  {n}.) {choice}'
-            col = n % columns # 0 = last column
+            col = n % current_column_count # 0 = last column
             
-            if n >= columns and col == 0:
+            if n >= current_column_count and col == 0:
                 print(row)
                 row = ''
             else:
@@ -568,7 +578,7 @@ def selectionMenu(labels: list, choices: list, not_found_choice: str = '', colum
                     print(row) # Last row
                 else:
                     row_length = len(row)
-                    max_length = max_spaces * col
+                    max_length = max_column_width * col
                     if row_length < max_length:
                         extra_spaces_count = max_length - row_length
                         for s in range(extra_spaces_count):
@@ -591,7 +601,6 @@ def selectionMenu(labels: list, choices: list, not_found_choice: str = '', colum
                 selection = 0
             
             selection = int(selection)
-            
             if first_choice <= selection <= n:
                 return selection
             else:
@@ -605,29 +614,31 @@ def selectionMenu(labels: list, choices: list, not_found_choice: str = '', colum
 ###     (labels) A list of lines of strings describing the menu.
 ###     (choices) A list options for the user to multi-select.
 ###     (not_found_choice) Optional selection string to signify "none of the above options is correct".
-###     (columns) Print out options in multiple columns.
+###     (columns) Print out options in multiple columns (up to a maximum menu width).
 ###     --> Returns a [list] of user selections
 def multiSelectionMenu(labels: list, choices: list, not_found_choice: str = '', columns: int = 1) -> list:
     first_choice = 0 if len(not_found_choice) else 1
-    max_spaces = 0
+    max_column_width = 0
+    
     if columns > 1:
         for choice in choices:
             length = len(choice) + 8
-            if length > max_spaces:
-                max_spaces = length
+            if length > max_column_width:
+                max_column_width = length
     
     while True:
         error = False
         n = 0
+        row = ''
+        
+        # If current menu/terminal width is too small for multiple columns, remove a column.
+        current_column_count = columns
+        while current_column_count > 1 and TSize().columns < max_column_width * current_column_count:
+            current_column_count -= 1
         
         for label in labels:
             print(f'{label}')
         
-        for choice in choices:
-            n += 1
-            print(f'  {n}.) {choice}')
-        
-        row = ''
         for choice in choices:
             n += 1
             row += f'  {n}.) {choice}'
@@ -641,7 +652,7 @@ def multiSelectionMenu(labels: list, choices: list, not_found_choice: str = '', 
                     print(row) # Last row
                 else:
                     row_length = len(row)
-                    max_length = max_spaces * col
+                    max_length = max_column_width * col
                     if row_length < max_length:
                         extra_spaces_count = max_length - row_length
                         for s in range(extra_spaces_count):
@@ -677,7 +688,7 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
     
     # The data from below cache file can reliably read game id/serials and disc paths, but not game titles.
     # So proper titles will be obtained from the full list of PS2 games using the game id.
-    if len(users_pcsx2_game_list) == 0:
+    if len(pcsx2_user_game_list) == 0:
         try:
             with open(pcsx2_game_list_file, 'r', encoding='ISO-8859-1') as game_list_file:
                 
@@ -699,17 +710,17 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
                     if next_line == DISC_PATH:
                         path = Path(line)
                         if path.exists():
-                            users_pcsx2_game_list.append(['','',path])
+                            pcsx2_user_game_list.append(['','',path])
                             next_line = ID
                     
                     elif next_line == ID:
                         if len(line) > 1:
-                            users_pcsx2_game_list[-1][ID] = line
+                            pcsx2_user_game_list[-1][ID] = line
                             next_line = TITLE
                     
                     elif next_line == TITLE:
                         if len(line) > 1:
-                            users_pcsx2_game_list[-1][TITLE] = line # May have extra characters, only use for comparision/place holder
+                            pcsx2_user_game_list[-1][TITLE] = line # May have extra characters, only use for comparision/place holder
                             next_line = DISC_PATH
                 
                 '''# Print List Test
@@ -727,8 +738,8 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
             print(f'ERROR: {e}')
             return False
     
-    # Build full list of PS2 games, while also updating "users_pcsx2_game_list" with proper title names.
-    if len(pcsx2_game_list) == 0:
+    # Build full list of PS2 games, while also updating "pcsx2_user_game_list" with proper title names.
+    if len(pcsx2_full_game_list) == 0:
         try:
             with open(pcsx2_game_database, 'r', encoding='utf-8') as file:
                 current_user_game_index = -1
@@ -742,15 +753,15 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
                     # New game found when a new ID is found.
                     if game_id_match:
                         current_game_id = game_id_match.group(0)
-                        current_user_game_index = getListIndexOf(current_game_id, users_pcsx2_game_list, ID)
+                        current_user_game_index = getListIndexOf(current_game_id, pcsx2_user_game_list, ID)
                     
                     # Next line may be a title
                     elif game_title_match:
                         current_game_title = game_title_match.group(1)
                         
                         # Add to full game list
-                        if current_game_title not in pcsx2_game_list:
-                            pcsx2_game_list.append(current_game_title)
+                        if current_game_title not in pcsx2_full_game_list:
+                            pcsx2_full_game_list.append(current_game_title)
                     
                     # Next line may be an English title
                     elif game_title_eng_match:
@@ -759,25 +770,25 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
                         # Add to full game list
                         if only_english_characters_in_game_list:
                             # Replace the non-English title above (last added).
-                            if current_game_title not in pcsx2_game_list:
-                                pcsx2_game_list[-1] = current_game_title
+                            if current_game_title not in pcsx2_full_game_list:
+                                pcsx2_full_game_list[-1] = current_game_title
                             else:
-                                pcsx2_game_list.pop(-1)
-                        elif current_game_title not in pcsx2_game_list:
-                            pcsx2_game_list.append(current_game_title)
+                                pcsx2_full_game_list.pop(-1)
+                        elif current_game_title not in pcsx2_full_game_list:
+                            pcsx2_full_game_list.append(current_game_title)
                     
                     if current_game_title != '': # If an English title exists, it will overwrite previous non-English title.
                         
                         # Update the user game list with new title if matching ID found.
-                        if len(users_pcsx2_game_list) > current_user_game_index > -1:
-                            users_pcsx2_game_list[current_user_game_index][TITLE] = current_game_title
+                        if len(pcsx2_user_game_list) > current_user_game_index > -1:
+                            pcsx2_user_game_list[current_user_game_index][TITLE] = current_game_title
             
             if sort:
-                pcsx2_game_list.sort()
+                pcsx2_full_game_list.sort()
             
             '''# Save full list of games to a file
             if not full_pcsx2_game_list_file.exists():
-                list_of_games = '\n'.join(pcsx2_game_list)
+                list_of_games = '\n'.join(pcsx2_full_game_list)
                 if_error_file_path = full_pcsx2_game_list_file
                 with open(full_pcsx2_game_list_file, 'w', encoding='utf-8') as f:
                     f.write(list_of_games)
@@ -790,7 +801,7 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
             print(f'ERROR: {e}')
             return False
     
-    # Update "users_pcsx2_game_list" with any custom titles (special versions/betas/hacks/mods/etc.).
+    # Update "pcsx2_user_game_list" with any custom titles (special versions/betas/hacks/mods/etc.).
     custom_titles = CP.ConfigParser(strict=False)
     try:
         custom_titles.read(pcsx2_custom_game_title_file)
@@ -801,8 +812,8 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
                 ## Skip custom disc names with square bracket characters.
                 ## This is a temporary fix, REMOVE if PCSX2 fixes its custom title issue.
                 if custom_game_title.find('[') == -1 and custom_game_title.find(']') == -1:
-                    i = getListIndexOf(disc_path, users_pcsx2_game_list, DISC_PATH)
-                    users_pcsx2_game_list[i][TITLE] = custom_game_title
+                    i = getListIndexOf(disc_path, pcsx2_user_game_list, DISC_PATH)
+                    pcsx2_user_game_list[i][TITLE] = custom_game_title
     
     except CP.Error as e:
         print(rf'Error reading "{pcsx2_custom_game_title_file.name}": {e}')
@@ -823,22 +834,26 @@ def createListOfPCSX2Games(sort: bool = False) -> bool:
 def searchFor(search_words: str, in_game_title_list: list, multi_level_key: int = -1) -> (list, list):
     full_matched_list = []
     high_probability_list = []
+    re_flags = RE.IGNORECASE
+    if uppercase_roman_numerals_only:
+        re_flags = 0
     
     # Split and clean-up search words
     segmented_game_title = (
-        search_words.lower().replace(':', '').replace(' -', '').replace(' &', '').replace('(', '')
+        search_words.replace(':', '').replace(' -', '').replace(' &', '').replace('(', '')
         .replace(')', '').replace('[', '').replace(']', '').replace('"', '').replace('\\', ' ')
         .replace('/', ' ').replace(',', ' ').split()
     )
     
     searchable_title_words = []
-    for part in segmented_game_title:
+    for word in segmented_game_title:
         # Only search for numbers and 3+ letter words (unless only one word).
-        if RE.fullmatch(r'\d+|i|ii|iv|v|vi|ix|x|xi|xv|xx', part):
-            searchable_title_words.append(part)
-        elif (len(part) > 2) or len(segmented_game_title) == 1:
-            searchable_title_words.append(part)
-    print(f'searchable_title_words: {searchable_title_words}')
+        if RE.fullmatch(r'\d+|I|II|IV|V|VI|IX|X|XI|XV|XX', word, flags=re_flags):
+            searchable_title_words.append(word)
+        elif (len(word) > 2) or len(segmented_game_title) == 1:
+            searchable_title_words.append(word.lower())
+    
+    #print(f'\nsearchable_title_words: {searchable_title_words}')
     
     # Search list for 50% or more of the usable search words.
     for game in in_game_title_list:
@@ -852,16 +867,20 @@ def searchFor(search_words: str, in_game_title_list: list, multi_level_key: int 
         skipped_words = 0
         not_found_words = 0
         for word in searchable_title_words:
-            searchable_game_title = game_title.lower()
+            
+            if RE_ROMAN_NUMERALS.fullmatch(word):
+                searchable_game_title = game_title
+            else:
+                searchable_game_title = game_title.lower()
+            
             if word in searchable_game_title:
                 # "The" and numbers will give too many results if they are the only words found.
-                if RE.fullmatch(r'the|\d+|i|ii|iv|v|vi|ix|x|xi|xv|xx', word):
+                # Note: Single word searches (in searchable_title_words) will never be skipped.
+                if RE.fullmatch(r'the|\d+|I|II|IV|V|VI|IX|X|XI|XV|XX', word, flags=re_flags):
                     skipped_words += 1
                 found_words += 1
             else:
                 not_found_words += 1
-        
-        #print(f'Title: {game_title} - found_words: {found_words} - skipped_words: {skipped_words}')
         
         if found_words == len(searchable_title_words): # All Words Matched
             if game_title not in full_matched_list:
@@ -895,12 +914,20 @@ def changeNumberSystemIn(search_words: str, to_roman_numerals_only: bool = False
         search_numbers = arabic_numerals_list
         replacement_numbers = roman_numerals_list
     else:
-        re_object = re_roman_numerals
+        if uppercase_roman_numerals_only:
+            re_object = RE_ROMAN_NUMERALS
+        else:
+            re_object = re_roman_numerals
         search_numbers = roman_numerals_list
         replacement_numbers = arabic_numerals_list
     
-    all_n_found = re_object.findall(search_item.lower())
-    alt_search_words = search_words
+    all_n_found = []
+    if uppercase_roman_numerals_only:
+        all_n_found = re_object.findall(search_item)
+        alt_search_words = search_words
+    else:
+        all_n_found = re_object.findall(search_item.lower())
+        alt_search_words = search_words.lower()
     
     if len(all_n_found):
         for found_number in all_n_found:
@@ -908,10 +935,10 @@ def changeNumberSystemIn(search_words: str, to_roman_numerals_only: bool = False
             for number in search_numbers:
                 n += 1
                 if found_number == number:
-                    alt_search_words = re_object.sub(rf'{replacement_numbers[n]}', alt_search_words.lower(), count=1)
+                    alt_search_words = re_object.sub(rf'{replacement_numbers[n]}', alt_search_words, count=1)
                     break
     
-    if alt_search_words == search_words:
+    if alt_search_words.lower() == search_words.lower():
         if to_roman_numerals_only:
             return ''
         else: # If no Roman numerals found check for Arabic numerals now.
@@ -1149,7 +1176,7 @@ def showSettingsMenu():
             selection = selectionMenu(
                 [f'Select a {setting}:'],
                 [media_type[TYPE] for media_type in launchbox_media_type_list],
-                '--No Change--', 2
+                '--No Change--', 3
             )
             if selection:
                 updateSetting(setting_selection, launchbox_media_type_list[selection - 1][TYPE], True)
@@ -1355,7 +1382,7 @@ def printHelp():
     print('  [settings] Will show all the changeable settings in this script.')
     print('\nOther Details:')
     print('  Type "*" after any search to use the previous options already selected for any')
-    print('  found game title or disc. Used to speed through back-and-forth image changes.')
+    print('  game title or disc found. Used to speed through back-and-forth image changes.')
     print('  Shorthand: "LB" = "LaunchBox", "PS" = "PCSX2", "*" = "Settings"')
     print('  The "show" command is usable at every input prompt.')
     print('  Leave the "--->" input prompt blank and press the "Enter" key to close this window.')
@@ -1375,7 +1402,7 @@ def printGames(app: str, show_id: bool = False):
                 print(f'Game Path:  {disc_path}')
             print()
     elif app == 'PCSX2':
-        for game in users_pcsx2_game_list:
+        for game in pcsx2_user_game_list:
             if show_id:
                 print(f'Game ID:    {game[ID]}')
             print(f'Game Title: {game[TITLE]}')
@@ -1396,7 +1423,7 @@ def openDirectory(directory_path: str):
     elif platform == 'darwin': # macOS
         Open(['open', directory_path])
     else:
-        print(f'Failed to open directory. Operating system unknown or unsupported: "{os_platform}"')
+        print(f'WARNING: Failed to open directory. Operating system unknown or unsupported: "{os_platform}"')
 
 
 ### Prints a box pattern around one or more lines of text.
@@ -1479,9 +1506,9 @@ if __name__ == '__main__':
     loop = True
     use_saved_selections = always_use_previous_choices
     search_item = None # This could be a String or a Path
-    all_games = False
-    title_search = False
-    divider = '\n--------------------------------------------------'
+    all_games_search = False
+    single_title_search = False
+    divider = '\n--------------------------------------------------\n'
     
     # Load or create saved user settings and choices from XML file.
     if settings_file.exists():
@@ -1501,7 +1528,7 @@ if __name__ == '__main__':
             search_item = None
     
     ## Quick Testing
-    #title_search = True
+    #single_title_search = True
     #search_item = r''
     
     while loop:
@@ -1512,12 +1539,11 @@ if __name__ == '__main__':
             high_probability_game_list = []
             
             # Find Game Title(s)
-            if all_games: # All Games, All Discs Search
+            if all_games_search: # All Games, All Discs Search
                 game_list = lauchbox_game_list
             
-            elif title_search: # Game Title Search (Multi-Disc)
+            elif single_title_search: # Game Title Search (Multi-Disc)
                 print(divider)
-                print()
                 selection = 0
                 search_item = str(search_item)
                 alt_search_item = ''
@@ -1559,8 +1585,10 @@ if __name__ == '__main__':
                             )
                         if selection > 0:
                             game_list.append(high_probability_game_list[selection - 1])
+                            print(divider)
                     else:
                         game_list.append(full_matched_game_list[selection - 1])
+                        print(divider)
                 
                 '''# Old search method
                 for game in lauchbox_game_list:
@@ -1582,24 +1610,23 @@ if __name__ == '__main__':
                 #'''#
             else: # Single Disc Path Search
                 print(divider)
-                print()
                 for game in lauchbox_game_list:
                     for disc_path in game[DISC_PATH]:
                         if str(search_item) == disc_path:
-                            print(f"Game Title: {game[TITLE]}")
-                            print(f"Game Path:  {disc_path}")
                             game_list.append([ game[ID], game[TITLE], [disc_path] ])
             
             if len(game_list) == 0:
-                print(f"\nNo PS2 Games Found In LaunchBox For: {str(search_item)}")
-                search_item = None
-                print(divider)
-                continue
+                print(f'\nNo PS2 Games Found In LaunchBox For: {str(search_item)}')
             
             for game in game_list:
                 
-                if all_games:
+                if all_games_search:
                     print(divider)
+                
+                print(f'LaunchBox Title Found:')
+                print(f'  {game[TITLE]}')
+                for disc_path in game[DISC_PATH]:
+                    print(f'    {disc_path}')
                 
                 for disc_path in game[DISC_PATH]:
                     
@@ -1626,16 +1653,16 @@ if __name__ == '__main__':
                             alt_search_item = changeNumberSystemIn(search_item)
                         
                         # Preform the search (and also an extra alt search if needed).
-                        full_matched_game_list, high_probability_game_list = searchFor(search_item, pcsx2_game_list)
+                        full_matched_game_list, high_probability_game_list = searchFor(search_item, pcsx2_full_game_list)
                         if len(alt_search_item):
-                            full_matched_game_list_alt, high_probability_game_list_alt = searchFor(alt_search_item, pcsx2_game_list)
+                            full_matched_game_list_alt, high_probability_game_list_alt = searchFor(alt_search_item, pcsx2_full_game_list)
                             # Merge the lists, no repeats/duplicates
-                            for game in full_matched_game_list_alt:
-                                if game not in full_matched_game_list:
-                                    full_matched_game_list.append(game)
-                            for game in high_probability_game_list_alt:
-                                if game not in full_matched_game_list and game not in high_probability_game_list:
-                                    high_probability_game_list.append(game)
+                            for found_game in full_matched_game_list_alt:
+                                if found_game not in full_matched_game_list:
+                                    full_matched_game_list.append(found_game)
+                            for found_game in high_probability_game_list_alt:
+                                if found_game not in full_matched_game_list and found_game not in high_probability_game_list:
+                                    high_probability_game_list.append(found_game)
                         
                         # Auto-select the only full match found or ask for the proper title if more than one.
                         if len(full_matched_game_list) == 1:
@@ -1658,8 +1685,9 @@ if __name__ == '__main__':
                             if not use_previous_selection:
                                 
                                 if len(full_matched_game_list) > 1:
-                                    print(f"\nGame Title: {game[TITLE]}")
-                                    print(f"Game Path:  {disc_path}")
+                                    print(f'\nLaunchBox Title Found:')
+                                    print(f'  {game[TITLE]}')
+                                    print(f'    {disc_path}')
                                     selection = selectionMenu(
                                         ['\nMultiple very similarly matched titles found in the search results.',
                                          f'Try to match one of these PCSX2 titles with the LaunchBox game title and path above.'],
@@ -1671,8 +1699,9 @@ if __name__ == '__main__':
                                 
                                 if selection == 0:
                                     if len(high_probability_game_list):
-                                        print(f"\nGame Title: {game[TITLE]}")
-                                        print(f"Game Path:  {disc_path}")
+                                        print(f'\nLaunchBox Title Found:')
+                                        print(f'  {game[TITLE]}')
+                                        print(f'    {disc_path}')
                                         selection = selectionMenu(
                                             ['\nNo matching titles found, but here are some loosely matched search results.',
                                              f'Try to match one of these PCSX2 titles with the LaunchBox game title and path above.'],
@@ -1684,15 +1713,16 @@ if __name__ == '__main__':
                                             updateSavedChoice(game[TITLE], disc_path, 'LooseMatched', selection)
                                     
                                     if selection == 0:
-                                        print(f"\nNo Matching PCSX2 Titles Found For: {game[TITLE]}")
-                                        print(f"Game Path:  {disc_path}\n")
+                                        print(f'\nNo Matching PCSX2 Titles Found For:')
+                                        print(f'  {game[TITLE]}')
+                                        print(f'    {disc_path}')
                                         continue
                                     else:
                                         pcsx2_game_title_list.append(high_probability_game_list[selection - 1])
                                 else:
                                     pcsx2_game_title_list.append(full_matched_game_list[selection - 1])
                     
-                    print(f"\nMatching PCSX2 Title Found:")
+                    print(f'\nMatching PCSX2 Title Found:')
                     for pcsx2_game_title in pcsx2_game_title_list:
                         print(f'  {pcsx2_game_title}')
                     
@@ -1749,8 +1779,9 @@ if __name__ == '__main__':
                                 new_image_file_name = pcsx2_game_title.replace(':', ' -') + source_image.suffix
                                 destination_image = pcsx2_image_folder / new_image_file_name
                                 
-                                print(f'\nSource Path:      {str(source_image)}')
-                                print(f'Destination Path: {str(destination_image)}')
+                                print(f'\nLaunchBox Image Found:')
+                                print(f'  Source Path:      {str(source_image)}')
+                                print(f'  Destination Path: {str(destination_image)}')
                                 
                                 # Get all existing images with the same name minus extension. Only one image can be shown per game in PCSX2,
                                 # but multple images can have the same game title with different extensions.
@@ -1825,7 +1856,7 @@ if __name__ == '__main__':
                                 else:
                                     # Copy (and if set, resize) a new cover image to a new location.
                                     if resize_cover_image > 0:
-                                        print('')
+                                        print()
                                         image_copied = image_resized = resizeCoverImage(source_image, resize_cover_image, destination_image)
                                     
                                     # If image resizing din't happen for whatever reason, just copy the image to new location.
@@ -1883,14 +1914,14 @@ if __name__ == '__main__':
                         print(f'\nNo Cover Images Found For The Game: {game[TITLE]}')
             
             search_item = None
-            print(divider)
+            print(divider[:-1])
         
         else:
             try_again = loop_script
             loop = loop_script
             use_saved_selections = False
-            all_games = False
-            title_search = False
+            all_games_search = False
+            single_title_search = False
             while try_again:
                 if starting_message:
                     starting_message = False
@@ -1927,10 +1958,10 @@ if __name__ == '__main__':
                     loop = False
                     try_again = False
                 elif user_input.lower() == 'all':
-                    all_games = True
+                    all_games_search = True
                     try_again = False
                 elif search_item.exists():
                     try_again = False
                 else:
-                    title_search = True
+                    single_title_search = True
                     try_again = False
