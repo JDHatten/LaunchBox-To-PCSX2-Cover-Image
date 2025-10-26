@@ -4,12 +4,12 @@
 ---
 
 ### Description:
-- This script will copy and resize PlayStation 2 LaunchBox images and save them to the PCSX2 cover image folder.
+This script will copy and resize PlayStation 2 LaunchBox images and save them to the PCSX2 cover image folder.
 
 ### To Use:
 - First, make sure root paths are correct in the running script.
 - Then drop or type a path to a PS2 game disc into the command prompt.
-- -OR-
+<br>-OR-
 - Type a complete or partial game title into the command prompt.
 
 ### List of Useful Commands:
@@ -20,6 +20,6 @@
 - `settings`&nbsp; Will show all the changeable settings in this script.
 
 ### Other Details:
-- Type `*` after any search to use the previous options already selected for any found game title or disc. Used to speed through back-and-forth image changes. &nbsp; *Ex.* `Metal Gear*`
+- Type `*` after any search to use the previous options already selected for any game title or disc found. Used to speed through back-and-forth image changes. &nbsp; *Ex.* `Metal Gear*`
 - Shorthand: `LB` = `LaunchBox`, `PS` = `PCSX2`, `*` = `Settings`
 - The `show` command is usable at every input prompt.
