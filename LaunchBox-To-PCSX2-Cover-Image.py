@@ -3,20 +3,21 @@
 
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 LaunchBox To PCSX2 Cover Image
-by JDHatten
+  Verion 1.0
+  by JDHatten
     
     Description:
         This script will copy and resize PlayStation 2 LaunchBox images and save them
         to the PCSX2 cover image folder.
     
     To Use:
-        First, make sure root paths are correct in the running script.
+        First, run the script and make sure root path settings are correct.
         Then drop or type a path to a PS2 game disc into the command prompt.
         -OR-
         Type a complete or partial game title into the command prompt.
     
     Note:
-        Type "Help" in the command prompt for additional information.
+        Type "Help" in the command prompt for additional information and commands.
 
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
@@ -66,7 +67,7 @@ pcsx2_root = rf'{ENV.get("ProgramFiles")}\PCSX2'
 # Note: More categories can be found in LaunchBox's image directories.
 #       "Box - 3D", "Box - Back", "Box - Front - Reconstructed", "Disc", "Clear Logo",
 #       "Screenshot - Game Title", "Screenshot - Gameplay", "Cart - Front",...
-lauchbox_media_type = 'Box - Front'
+launchbox_media_type = 'Box - Front'
 
 # It's recommended you resize any large images to 720p or smaller.
 # Enter 0 if you do not want the image file resized.
@@ -108,7 +109,7 @@ pcsx2_settings_file = rf'{pcsx2_root}\inis\PCSX2.ini'
 pcsx2_image_folder = rf'{pcsx2_root}\PCSX2\covers'
 
 # LaunchBox's default PS2 image directory. Only used as a fallback.
-launchbox_image_folder = rf'{launchbox_root}\Images\Sony Playstation 2\{lauchbox_media_type}'
+launchbox_image_folder = rf'{launchbox_root}\Images\Sony Playstation 2\{launchbox_media_type}'
 
 # Set to False to add foreign character title names to the full list of "searchable" PS2 games.
 # Note: Only useful when matching games between LaunchBox and PCSX2 fail and there are foreign
@@ -124,16 +125,17 @@ pcsx2_custom_game_title_file = Path(pcsx2_custom_game_title_file)
 pcsx2_settings_file = Path(pcsx2_settings_file)
 full_pcsx2_game_list_file = ROOT / 'full_pcsx2_game_list.txt'
 settings_file = ROOT / f'{Path(__file__).stem}-Settings.xml'
+last_ps2_directory = ROOT
 pcsx2_full_game_list = []
 pcsx2_user_game_list = []       # [ [ ID, TITLE, DISC_PATH ],...]
-lauchbox_game_list = []         # [ [ ID, TITLE, DISC_PATH ],...]
+launchbox_game_list = []        # [ [ ID, TITLE, DISC_PATH ],...]
 launchbox_media_type_list = []  # [ [ TYPE, PATH ],...]
 supported_images = ['.jpg','.jpeg', '.jpe', '.png', '.webp']
 roman_numerals_list = ['0','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX']
 arabic_numerals_list = ['0','1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20']
 re_roman_numerals = RE.compile(r'\b(xx|xix|xviii|xvii|xvi|xiv|xiii|xii|xi|ix|viii|vii|vi|iv|xv|x|v|iii|ii|i)\b')
 RE_ROMAN_NUMERALS = RE.compile(r'\b(XX|XIX|XVIII|XVII|XVI|XIV|XIII|XII|XI|IX|VIII|VII|VI|IV|XV|X|V|III|II|I)\b')
-re_numbers = RE.compile(r'\b([0-9]|1[0-9]|20)\b')
+re_arabic_numerals = RE.compile(r'\b([0-9]|1[0-9]|20)\b')
 
 # Constants
 SCRIPT_TITLE   = 'LaunchBox To PCSX2 Cover Image'
@@ -174,11 +176,12 @@ BICUBIC = 2   #
 # Settings
 LAUNCHBOX_ROOT = 0
 PCSX2_ROOT = 1
-LAUCHBOX_MEDIA_TYPE = 2
+LAUNCHBOX_MEDIA_TYPE = 2
 RESIZE_COVER_IMAGE = 3
 ALWAYS_OVERWRITE = 4
 SEARCH_BOTH_NUMBER_SYSTEMS = 5
 DEFAULT_SETTINGS = 6
+LAST_PS2_DIRECTORY = 99
 
 
 ### Update all paths related to a change in LaunchBox or PCSX2 root paths.
@@ -231,26 +234,26 @@ def updatePathsUsing(changed_path: int):
         # Defaults
         launchbox_ps2_xml = rf'{launchbox_root}\Data\Platforms\Sony Playstation 2.xml'
         launchbox_platform_xml = rf'{launchbox_root}\Data\Platforms.xml'
-        launchbox_image_folder = rf'{launchbox_root}\Images\Sony Playstation 2\{lauchbox_media_type}'
+        launchbox_image_folder = rf'{launchbox_root}\Images\Sony Playstation 2\{launchbox_media_type}'
         
         try:
             launchbox_ps2_xml_root = ET.parse(launchbox_ps2_xml).getroot()
             launchbox_platform_xml_root = ET.parse(launchbox_platform_xml).getroot()
             
             # Build list of LaunchBox game titles and their disc paths
-            if len(lauchbox_game_list) == 0:
+            if len(launchbox_game_list) == 0:
                 for lb_game in launchbox_ps2_xml_root.findall('Game'):
                     lb_game_id = lb_game.find('ID').text
                     lb_game_title = lb_game.find('Title').text
                     lb_game_path = lb_game.find('ApplicationPath').text
-                    lauchbox_game_list.append([ lb_game_id, lb_game_title, [lb_game_path] ])
+                    launchbox_game_list.append([ lb_game_id, lb_game_title, [lb_game_path] ])
                     
                 for lb_game in launchbox_ps2_xml_root.findall('AdditionalApplication'):
                     lb_emu_id = lb_game.find('EmulatorId').text
                     lb_game_id = lb_game.find('GameID').text
                     lb_game_path = lb_game.find('ApplicationPath').text
                     if lb_emu_id: # Check if this is a game disc connected to an emulator.
-                        for game in lauchbox_game_list:
+                        for game in launchbox_game_list:
                             # Update the game with another disc path
                             # (Multi-disc game: additional content, alt version/region, hacked/modded, etc)
                             if game[ID] == lb_game_id:
@@ -265,7 +268,7 @@ def updatePathsUsing(changed_path: int):
                 platform = platform_folder.find('Platform').text
                 if platform == 'Sony Playstation 2':
                     launchbox_media_type_list.append([ media_type, folder_path ])
-                    if media_type == lauchbox_media_type: # Get user chosen image category path
+                    if media_type == launchbox_media_type: # Get user chosen image category path
                         launchbox_image_folder = folder_path
             launchbox_media_type_list.append([MEDIA_TYPE_ALL,'.ALL']) # If selected, will loop all types/paths
         
@@ -910,7 +913,7 @@ def searchFor(search_words: str, in_game_title_list: list, multi_level_key: int 
 ###     --> Returns a [str]
 def changeNumberSystemIn(search_words: str, to_roman_numerals_only: bool = False) -> str:
     if to_roman_numerals_only:
-        re_object = re_numbers
+        re_object = re_arabic_numerals
         search_numbers = arabic_numerals_list
         replacement_numbers = roman_numerals_list
     else:
@@ -994,11 +997,15 @@ def loadSettings() -> bool:
     
     element_launchbox_type = root.find('Settings/LaunchBox/MediaType')
     if element_launchbox_type is not None:
-        updateSetting(LAUCHBOX_MEDIA_TYPE, element_launchbox_type.text, False)
+        updateSetting(LAUNCHBOX_MEDIA_TYPE, element_launchbox_type.text, False)
     
     element_launchbox_search = root.find('Settings/LaunchBox/SearchBothNS')
     if element_launchbox_search is not None:
         updateSetting(SEARCH_BOTH_NUMBER_SYSTEMS, element_launchbox_search.text, False)
+    
+    element_launchbox_last_dir = root.find('Settings/LaunchBox/LastPS2Directory')
+    if element_launchbox_last_dir is not None:
+        updateSetting(LAST_PS2_DIRECTORY, element_launchbox_last_dir.text, False)
     
     element_pcsx2_root = root.find('Settings/PCSX2/Root')
     if element_pcsx2_root is not None:
@@ -1026,8 +1033,9 @@ def defaultSettings():
     root_path = rf'{ENV.get("ProgramFiles")}\PCSX2'
     if Path(root_path).exists():
         updateSetting(PCSX2_ROOT, root_path, False)
-    updateSetting(LAUCHBOX_MEDIA_TYPE, 'Box - Front', False)
+    updateSetting(LAUNCHBOX_MEDIA_TYPE, 'Box - Front', False)
     updateSetting(SEARCH_BOTH_NUMBER_SYSTEMS, True, False)
+    updateSetting(LAST_PS2_DIRECTORY, ROOT, False)
     updateSetting(RESIZE_COVER_IMAGE, 720, False)
     updateSetting(ALWAYS_OVERWRITE, True, True)
 
@@ -1036,15 +1044,17 @@ def defaultSettings():
 ###     (setting) The setting constant.
 ###     (value) The setting value to change.
 ###     (save) Save settings to file.
+###     (show_message) Show successful update messages.
 ###     --> Returns a [bool] Success or Failure
-def updateSetting(setting: int, value, save: bool) -> bool:
+def updateSetting(setting: int, value, save: bool, show_message = True) -> bool:
     global launchbox_root
     global pcsx2_root
-    global lauchbox_media_type
+    global launchbox_media_type
     global resize_cover_image
     global always_overwrite
     global search_both_number_systems
     global launchbox_image_folder
+    global last_ps2_directory
     
     # Update the setting varible
     if setting == LAUNCHBOX_ROOT:
@@ -1055,10 +1065,10 @@ def updateSetting(setting: int, value, save: bool) -> bool:
         pcsx2_root = str(value)
         updatePathsUsing(PCSX2_ROOT)
     
-    elif setting == LAUCHBOX_MEDIA_TYPE:
-        lauchbox_media_type = str(value)
+    elif setting == LAUNCHBOX_MEDIA_TYPE:
+        launchbox_media_type = str(value)
         # If media types and paths loaded in, update "launchbox_image_folder" too.
-        i = getListIndexOf(lauchbox_media_type, launchbox_media_type_list, TYPE)
+        i = getListIndexOf(launchbox_media_type, launchbox_media_type_list, TYPE)
         if len(launchbox_media_type_list) > i > -1:
             launchbox_image_folder = launchbox_media_type_list[i][PATH]
     
@@ -1071,12 +1081,16 @@ def updateSetting(setting: int, value, save: bool) -> bool:
     elif setting == SEARCH_BOTH_NUMBER_SYSTEMS:
         search_both_number_systems = (str(value).lower() == "true")
     
+    elif setting == LAST_PS2_DIRECTORY:
+        last_ps2_directory = str(value)
+    
     else:
         print('\nWARNING: Setting Not Found!')
         return False
     
     if save:
-        print('\n[Settings Updated]')
+        if show_message:
+            print('\n[Settings Updated]')
         
         # Save changes to XML settings file
         try:
@@ -1101,12 +1115,17 @@ def updateSetting(setting: int, value, save: bool) -> bool:
             element_launchbox_type = element_launchbox.find('MediaType')
             if element_launchbox_type is None:
                 element_launchbox_type = ET.SubElement(element_launchbox, 'MediaType')
-            element_launchbox_type.text = lauchbox_media_type
+            element_launchbox_type.text = launchbox_media_type
             
             element_launchbox_search = element_launchbox.find('SearchBothNS')
             if element_launchbox_search is None:
                 element_launchbox_search = ET.SubElement(element_launchbox, 'SearchBothNS')
             element_launchbox_search.text = str(search_both_number_systems)
+            
+            element_launchbox_last_dir = element_launchbox.find('LastPS2Directory')
+            if element_launchbox_last_dir is None:
+                element_launchbox_last_dir = ET.SubElement(element_launchbox, 'LastPS2Directory')
+            element_launchbox_last_dir.text = str(last_ps2_directory)
             
             element_pcsx2_root = element_pcsx2.find('Root')
             if element_pcsx2_root is None:
@@ -1127,7 +1146,8 @@ def updateSetting(setting: int, value, save: bool) -> bool:
             ET.indent(tree, space='  ', level=0)
             tree.write(settings_file, encoding='utf-8', xml_declaration=True)
             
-            print('[Settings Saved]')
+            if show_message:
+                print('[Settings Saved]')
             return True
         
         except IOError as e:
@@ -1148,7 +1168,7 @@ def showSettingsMenu():
     choices = [
         f'LaunchBox Root Directory\n        Current: {launchbox_root}\n',
         f'PCSX2 Root Directory\n        Current: {pcsx2_root}\n',
-        f'LaunchBox Image Category\n        Current: {lauchbox_media_type}\n',
+        f'LaunchBox Image Category\n        Current: {launchbox_media_type}\n',
         f'PCSX2 Cover Image Resize\n        Current: {resize_cover_image}\n',
         f'Always Overwrite PCSX2 Cover Image\n        Current: {always_overwrite}\n',
         f'Search For Both Arabic and Roman Numerals\n        Current: {search_both_number_systems}\n',
@@ -1172,7 +1192,7 @@ def showSettingsMenu():
             else:
                 print(f'\nWARNING: This path "{directory_path}" does not exist.')
         
-        elif setting_selection == LAUCHBOX_MEDIA_TYPE:
+        elif setting_selection == LAUNCHBOX_MEDIA_TYPE:
             selection = selectionMenu(
                 [f'Select a {setting}:'],
                 [media_type[TYPE] for media_type in launchbox_media_type_list],
@@ -1239,7 +1259,7 @@ def updateSavedChoice(game_title: str, game_path: str, choice: str, selection: i
                     path_found = True
                     
                     if choice == 'Image' or choice == 'Overwrite':
-                        element_choice = element_path.find(f'.//{choice}[@type="{lauchbox_media_type}"]')
+                        element_choice = element_path.find(f'.//{choice}[@type="{launchbox_media_type}"]')
                     else:
                         element_choice = element_path.find(choice)
                     
@@ -1261,7 +1281,7 @@ def updateSavedChoice(game_title: str, game_path: str, choice: str, selection: i
             element_choice = ET.SubElement(element_path, choice)
             
             if choice == 'Image' or choice == 'Overwrite':
-                element_choice.set('type', lauchbox_media_type)
+                element_choice.set('type', launchbox_media_type)
             
             element_choice.text = str(selection)
             choice_updated = True
@@ -1297,7 +1317,7 @@ def removeSavedChoice(game_title: str, game_path: str, choice: str) -> bool:
                     
                     element_choice = None
                     if choice == 'Image' or choice == 'Overwrite':
-                        element_choice = element_path.find(f'.//{choice}[@type="{lauchbox_media_type}"]')
+                        element_choice = element_path.find(f'.//{choice}[@type="{launchbox_media_type}"]')
                     else:
                         element_choice = element_path.find(choice)
                     
@@ -1336,7 +1356,7 @@ def getSavedChoice(game_title: str, game_path: str, choice: str) -> int:
                     
                     element_choice = None
                     if choice == 'Image' or choice == 'Overwrite':
-                        element_choice = element_path.find(f'.//{choice}[@type="{lauchbox_media_type}"]')
+                        element_choice = element_path.find(f'.//{choice}[@type="{launchbox_media_type}"]')
                     else:
                         element_choice = element_path.find(choice)
                     
@@ -1348,8 +1368,8 @@ def getSavedChoice(game_title: str, game_path: str, choice: str) -> int:
 
 ### Open a dialog allowing user to select a directory for LaunchBox or PCSX2.
 ###     (app_dir) LAUNCHBOX_ROOT or PCSX2_ROOT.
-###     --> Returns a [str] Directory Path
-def selectDirectoryFor(app_dir) -> str:
+###     --> Returns a [Path] to a Directory
+def selectDirectoryFor(app_dir) -> Path:
     window = TK.Tk()  # Create a basic Tkinter window
     window.withdraw() # Hide the main window
     
@@ -1367,24 +1387,47 @@ def selectDirectoryFor(app_dir) -> str:
         file_path = FileDialog.askopenfilename(
             title = f'Select The PCSX2 Application',
             initialdir = start_dir,
-            filetypes = (('PCSX2', 'pcsx2*.exe'), ('All files', '*.*'))
+            filetypes = (('PCSX2', 'pcsx2*.exe'), ('All Files', '*.*'))
         )
     window.destroy() # Close the hidden window after the dialog is closed
     return Path(file_path).parent
 
 
-### Print list of useful commands and other script notes.
+### Open a dialog allowing user to select one or more PlayStation 2 discs.
+###     --> Returns a [list] of Disc Paths
+def selectPS2Discs() -> list:
+    window = TK.Tk()  # Create a basic Tkinter window
+    window.withdraw() # Hide the main window
+    
+    start_dir = last_ps2_directory if Path(last_ps2_directory).exists() else ROOT
+    
+    disc_paths = FileDialog.askopenfilenames(
+        title = f'Select One or More PlayStation 2 Game Discs',
+        initialdir = start_dir,
+        filetypes = (('PS2 Discs', '*.bin *.chd *.cue *.iso'), ('All Files', '*.*'))
+    )
+    window.destroy() # Close the hidden window after the dialog is closed
+    
+    # Save last used PS2 games directory as a setting.
+    if len(disc_paths):
+        updateSetting(LAST_PS2_DIRECTORY, Path(disc_paths[0]).parent, True, False)
+    
+    return list(disc_paths)
+
+
+### Print list of useful commands and other script details.
 def printHelp():
     print('\nList of Useful Commands:')
     print('  [all]      Will create PCSX2 cover images for all LaunchBox games found.')
+    print('  [open]     Will open a dialog window to manually find and select PS2 discs.')
     print('  [list =]   Will list or show all games found in =LaunchBox= or =PCSX2=.')
     print('  [show =]   Will open a file explorer pointing to the =LaunchBox= or =PCSX2= image directory.')
     print('  [settings] Will show all the changeable settings in this script.')
     print('\nOther Details:')
-    print('  Type "*" after any search to use the previous options already selected for any')
+    print('  Type a "*" after any search to use the previous options already selected for any')
     print('  game title or disc found. Used to speed through back-and-forth image changes.')
-    print('  Shorthand: "LB" = "LaunchBox", "PS" = "PCSX2", "*" = "Settings"')
-    print('  The "show" command is usable at every input prompt.')
+    print('  Shorthand: LB = LaunchBox, PS = PCSX2, @ = Open, * = Settings, ? = Help')
+    print('  The [show] command is usable at every input prompt.')
     print('  Leave the "--->" input prompt blank and press the "Enter" key to close this window.')
 
 
@@ -1394,7 +1437,7 @@ def printHelp():
 def printGames(app: str, show_id: bool = False):
     print()
     if app == 'LaunchBox':
-        for game in lauchbox_game_list:
+        for game in launchbox_game_list:
             if show_id:
                 print(f'Game ID:    {game[ID]}')
             print(f'Game Title: {game[TITLE]}')
@@ -1508,6 +1551,7 @@ if __name__ == '__main__':
     search_item = None # This could be a String or a Path
     all_games_search = False
     single_title_search = False
+    multiple_disc_selections = []
     divider = '\n--------------------------------------------------\n'
     
     # Load or create saved user settings and choices from XML file.
@@ -1520,27 +1564,25 @@ if __name__ == '__main__':
             updatePathsUsing(LAUNCHBOX_ROOT)
             updatePathsUsing(PCSX2_ROOT)
     
-    # Quick Disc Drop
+    # Quick (Multi) Disc Drop
     if System.argv[1:] != []:
-        search_item = Path(System.argv[1])
-        if not search_item.exists():
-            print(f'\nThis is not an existing file path: "{search_item}"')
-            search_item = None
+        multiple_disc_selections = System.argv[1:]
     
     ## Quick Testing
     #single_title_search = True
     #search_item = r''
+    #multiple_disc_selections = [r'', r'']
     
+    # Script Loop
     while loop:
         if search_item:
-            found_game_list = []
             game_list = []
             full_matched_game_list = []
             high_probability_game_list = []
             
             # Find Game Title(s)
             if all_games_search: # All Games, All Discs Search
-                game_list = lauchbox_game_list
+                game_list = launchbox_game_list
             
             elif single_title_search: # Game Title Search (Multi-Disc)
                 print(divider)
@@ -1553,9 +1595,9 @@ if __name__ == '__main__':
                     alt_search_item = changeNumberSystemIn(search_item)
                 
                 # Preform the search (and also an extra alt search if needed).
-                full_matched_game_list, high_probability_game_list = searchFor(search_item, lauchbox_game_list, TITLE)
+                full_matched_game_list, high_probability_game_list = searchFor(search_item, launchbox_game_list, TITLE)
                 if len(alt_search_item):
-                    full_matched_game_list_alt, high_probability_game_list_alt = searchFor(alt_search_item, lauchbox_game_list, TITLE)
+                    full_matched_game_list_alt, high_probability_game_list_alt = searchFor(alt_search_item, launchbox_game_list, TITLE)
                     # Merge the lists, no repeats/duplicates
                     for game in full_matched_game_list_alt:
                         if game not in full_matched_game_list:
@@ -1568,55 +1610,42 @@ if __name__ == '__main__':
                 if len(full_matched_game_list) == 1:
                     game_list.append(full_matched_game_list[selection])
                 else:
-                    if len(full_matched_game_list) > 1:
-                        selection = selectionMenu(
-                            ['\nClosely matched LaunchBox game titles found. Select the title you\'re looking for:'],
-                            [game[TITLE] for game in full_matched_game_list],
-                            '-- None Of The Above Match... Expand Search? --',
-                            2 if len(full_matched_game_list) > 10 else 1
-                        )
-                    if selection == 0:
-                        if len(high_probability_game_list):
+                    if len(full_matched_game_list) or len(high_probability_game_list):
+                        if len(full_matched_game_list) > 1:
                             selection = selectionMenu(
-                                ['\nLoosely matched LaunchBox game titles found. Select the title you\'re looking for:'],
-                                [game[TITLE] for game in high_probability_game_list],
-                                '-- None Of The Above Match... Skip and Search For Another Game? --',
-                                2 if len(high_probability_game_list) > 10 else 1
+                                ['Closely matched LaunchBox game titles found. Select the title you\'re looking for:'],
+                                [game[TITLE] for game in full_matched_game_list],
+                                '-- None Of The Above Match... Expand Search? --',
+                                2 if len(full_matched_game_list) > 10 else 1
                             )
-                        if selection > 0:
-                            game_list.append(high_probability_game_list[selection - 1])
+                        if selection == 0:
+                            if len(high_probability_game_list):
+                                if len(full_matched_game_list) > 1:
+                                    print()
+                                selection = selectionMenu(
+                                    ['Loosely matched LaunchBox game titles found. Select the title you\'re looking for:'],
+                                    [game[TITLE] for game in high_probability_game_list],
+                                    '-- None Of The Above Match... Skip and Search For Another Game? --',
+                                    2 if len(high_probability_game_list) > 10 else 1
+                                )
+                            if selection > 0:
+                                game_list.append(high_probability_game_list[selection - 1])
+                                print(divider)
+                            else:
+                                print()
+                        else:
+                            game_list.append(full_matched_game_list[selection - 1])
                             print(divider)
-                    else:
-                        game_list.append(full_matched_game_list[selection - 1])
-                        print(divider)
-                
-                '''# Old search method
-                for game in lauchbox_game_list:
-                    if str(search_item).lower() in game[TITLE].lower():
-                        found_game_list.append(game)
-                
-                if len(found_game_list) == 1:
-                    game_list.append(found_game_list[0])
-                
-                elif len(found_game_list) > 1:
-                    selection = selectionMenu(
-                        [f'Multiple LaunchBox game titles found, select which title you\'re looking for:'],
-                        [game[TITLE] for game in found_game_list],
-                        '-- None Of The Above Match... Try Another Search? --',
-                        2 if len(found_game_list) > 10 else 1
-                    )
-                    if selection:
-                        game_list.append(found_game_list[selection - 1])
-                #'''#
+            
             else: # Single Disc Path Search
                 print(divider)
-                for game in lauchbox_game_list:
+                for game in launchbox_game_list:
                     for disc_path in game[DISC_PATH]:
                         if str(search_item) == disc_path:
                             game_list.append([ game[ID], game[TITLE], [disc_path] ])
             
             if len(game_list) == 0:
-                print(f'\nNo PS2 Games Found In LaunchBox For: {str(search_item)}')
+                print(f'No PS2 Games Found In LaunchBox For: {str(search_item)}')
             
             for game in game_list:
                 
@@ -1729,7 +1758,7 @@ if __name__ == '__main__':
                     # Find all reletive matching LaunchBox image files
                     image_list = []
                     image_search_query = game[TITLE].replace(':', '_').replace('\'', '_').replace('\\\\', '_').replace('\\', '_').replace('//', '_').replace('/', '_')
-                    if lauchbox_media_type == MEDIA_TYPE_ALL:
+                    if launchbox_media_type == MEDIA_TYPE_ALL:
                         for lb_media_type, lb_image_dir in launchbox_media_type_list:
                             lb_image_dir = Path(lb_image_dir)
                             if lb_image_dir.exists():
@@ -1914,25 +1943,43 @@ if __name__ == '__main__':
                         print(f'\nNo Cover Images Found For The Game: {game[TITLE]}')
             
             search_item = None
-            print(divider[:-1])
+            if len(multiple_disc_selections) == 0:
+                print(divider[:-1])
         
         else:
-            try_again = loop_script
-            loop = loop_script
-            use_saved_selections = False
-            all_games_search = False
-            single_title_search = False
+            # One or more file paths found. Go through list one by one.
+            if len(multiple_disc_selections):
+                search_item = Path(multiple_disc_selections.pop(0).strip())
+                try_again = False
+            else:
+                try_again = loop_script
+                loop = loop_script
+                use_saved_selections = False
+                all_games_search = False
+                single_title_search = False
+            
+            # Command Prompt:
             while try_again:
                 if starting_message:
                     starting_message = False
                     print('\nTo start drop, paste, or type a path to a PlayStation 2 disc file into this prompt.')
                     print('You can also search for a game by entering it\'s full or partial title name.')
-                    print('Type "help" for additional information.')
+                    print('Type "help" for additional information and commands.')
                 else:
                     print('\nSearch for another game?')
+                
                 user_input = input('\n--->')
+                if user_input == '':
+                    loop = False # Quit
+                    break
+                
                 user_input = user_input.replace('"', '')
-                if user_input.lower() == 'help':
+                
+                # Check for one or more file paths
+                multiple_disc_selections = RE.findall(r'\w\:\\.*?(?=\w\:\\|$)', user_input)
+                
+                # Commands
+                if user_input.lower() == 'help' or user_input.lower() == '?':
                     printHelp()
                     continue
                 elif user_input.lower() == 'list launchbox' or user_input.lower() == 'list lb':
@@ -1950,18 +1997,28 @@ if __name__ == '__main__':
                 elif user_input.lower() == 'show pcsx2' or user_input.lower() == 'show ps':
                     openDirectory(pcsx2_image_folder)
                     continue
+                
+                # Check if a search will use previous user choices/selections.
                 if user_input[-1:] == '*':
                     use_saved_selections = True
                     user_input = user_input[:-1]
-                search_item = Path(user_input)
-                if user_input == '': # Quit
-                    loop = False
-                    try_again = False
-                elif user_input.lower() == 'all':
+                
+                # Run The Search
+                if user_input.lower() == 'all':
                     all_games_search = True
-                    try_again = False
-                elif search_item.exists():
-                    try_again = False
+                    search_item = user_input
+                    break
+                elif user_input.lower() == 'open' or user_input.lower() == '@':
+                    multiple_disc_selections = selectPS2Discs()
+                    break
+                elif len(multiple_disc_selections):
+                    if not Path(multiple_disc_selections[0]).exists():
+                        # If not a file path then run a title search.
+                        multiple_disc_selections = []
+                        single_title_search = True
+                        search_item = user_input
+                    break
                 else:
                     single_title_search = True
-                    try_again = False
+                    search_item = user_input
+                    break
