@@ -283,14 +283,28 @@ def updatePathsUsing(app_root: int):
 ### Check if root paths are correct and if not ask user to update settings.
 ###     --> Returns a [bool] Pass or Fail
 def rootPathCheck():
-    if (not Path(launchbox_root + r'\LaunchBox.exe').exists() or not
-        (
-            Path(pcsx2_root + r'\pcsx2.exe').exists() or
+    launchbox_not_found = False
+    pcsx2_not_found = False
+    
+    if not Path(launchbox_root + r'\LaunchBox.exe').exists():
+        launchbox_not_found = True
+    
+    if not (Path(pcsx2_root + r'\pcsx2.exe').exists() or
             Path(pcsx2_root + r'\pcsx2-qtx64-avx2.exe').exists() or
-            Path(pcsx2_root + r'\pcsx2x64-avx2.exe').exists()
-        )):
-        print(f'\nWARNING: LaunchBox and/or PCSX2 root paths do not exist.')
-        print(f'         Please update them now.')
+            Path(pcsx2_root + r'\pcsx2x64-avx2.exe').exists()):
+        pcsx2_not_found = True
+    
+    if launchbox_not_found and pcsx2_not_found:
+        print(f'\nWARNING: Unable to locate the LaunchBox and PCSX2 applications.')
+        print(f'         Please make sure these application\'s root paths are correct.')
+    elif launchbox_not_found:
+        print(f'\nWARNING: Unable to locate the LaunchBox application.')
+        print(f'         Please make sure the LaunchBox\'s root path is correct.')
+    elif pcsx2_not_found:
+        print(f'\nWARNING: Unable to locate the PCSX2 application.')
+        print(f'         Please make sure the PCSX2\'s root path is correct.')
+
+    if launchbox_not_found or pcsx2_not_found:
         showSettingsMenu()
         return False
     else:
@@ -599,11 +613,8 @@ def selectionMenu(labels: list, choices: list, not_found_choice: str = '', colum
             selection = input('\n  Your Selection #: ')
             
             # Allow the use of the "show" command here.
-            if selection.lower() == 'show launchbox' or selection.lower() == 'show lb':
-                openDirectory(launchbox_image_folder)
-                continue
-            elif selection.lower() == 'show pcsx2' or selection.lower() == 'show ps':
-                openDirectory(pcsx2_image_folder)
+            if (isCommand(selection, True)):
+                print()
                 continue
             elif blank_cancel and selection == '': # Cancel
                 selection = 0
@@ -690,6 +701,34 @@ def multiSelectionMenu(labels: list, choices: list, not_found_choice: str = '', 
             
         except ValueError:
             print('  [Invalid Input, Please Enter Numbers Only (1,2,3)]\n')
+
+
+### Check if the provided string is a command and if so run the command.
+###     (user_input) A string that may be a command.
+###     (show_command_only) Only check for the "show" command.
+###     --> Returns a [bool] True if command found.
+def isCommand(user_input: str, show_command_only = False)-> bool:
+    if user_input.lower() == 'show launchbox' or user_input.lower() == 'show lb':
+        openDirectory(launchbox_image_folder)
+        return True
+    if user_input.lower() == 'show pcsx2' or user_input.lower() == 'show ps':
+        openDirectory(pcsx2_image_folder)
+        return True
+    if show_command_only:
+        return False
+    if user_input.lower() == 'help' or user_input.lower() == '?':
+        printHelp()
+        return True
+    if user_input.lower() == 'list launchbox' or user_input.lower() == 'list lb':
+        printGames('LaunchBox')
+        return True
+    if user_input.lower() == 'list pcsx2' or user_input.lower() == 'list ps':
+        printGames('PCSX2')
+        return True
+    if user_input.lower() == 'settings' or user_input.lower() == '*':
+        showSettingsMenu()
+        return True
+    return False
 
 
 ### Build PCSX2 game list consisting of user PS2 games. Also a builds a full list of games for fallback searching.
@@ -1196,7 +1235,8 @@ def showSettingsMenu():
         [f'{SCRIPT_TITLE} Settings:',
          f'  (Choose which setting to change)\n'],
         choices,
-        '--No More Changes--', 1, True, True
+        '--No More Changes--',
+        1, True, True
     )
     if setting_selection:
         setting_selection = setting_selection - 1
@@ -1240,7 +1280,10 @@ def showSettingsMenu():
             while True:
                 updated_setting = input(f'\n  Enter New "{setting}" (0 = No Resize): ')
                 
-                if setting_selection == RESIZE_COVER_IMAGE:
+                # Allow the use of the "show" command here.
+                if (isCommand(updated_setting, True)):
+                    continue
+                elif setting_selection == RESIZE_COVER_IMAGE:
                     if updated_setting.isnumeric():
                         updateSetting(setting_selection, int(updated_setting), True)
                         break
@@ -1438,6 +1481,44 @@ def selectPS2Discs() -> list:
     return list(disc_paths)
 
 
+### Open a directory for user to see or make changes manually.
+###     (directory_path) A path to a directory.
+def openDirectory(directory_path: str):
+    if directory_path == '.ALL' and len(launchbox_media_type_list):
+        directory_path = str(Path(launchbox_media_type_list[0][PATH]).parent)
+    platform = SYS.platform
+    if platform == 'win32':
+        Open(f'explorer "{directory_path}"')
+    elif platform == 'linux':
+        Open(['xdg-open', directory_path])
+    elif platform == 'darwin': # macOS
+        Open(['open', directory_path])
+    else:
+        print(f'WARNING: Failed to open directory. Operating system unknown or unsupported: "{os_platform}"')
+
+
+### Start the overwriting process by renaming the existing image.
+###     (destination_image) The existing image file path to be renamed.
+###     (existing_images) All other images (includeing destination_image) that will later be deleted/overwritten.
+###     --> Returns a [list] of files to be later deleted/overwritten.
+def initiateOverwritingOf(destination_image: Path, existing_images: list) -> list:
+    if destination_image in existing_images:
+        temp_existing_image = destination_image.parent / f'{destination_image.name}.tmp'
+        n = 0
+        while temp_existing_image.exists():
+            n += 1
+            temp_existing_image = destination_image.parent / f'{destination_image.name}.tmp{n}'
+        destination_image.rename(temp_existing_image)
+        
+        # Remove the new image from "existing_images" and add the temp file to be later deleted/overwritten.
+        i = existing_images.index(destination_image)
+        if i > -1:
+            existing_images.pop(i)
+        existing_images.append(temp_existing_image)
+    
+    return existing_images
+
+
 ### Print list of useful commands and other script details.
 def printHelp():
     print('\nList of Useful Commands:')
@@ -1474,22 +1555,6 @@ def printGames(app: str, show_id: bool = False):
             print(f'Game Title: {game[TITLE]}')
             print(f'Game Disc:  {game[DISC_PATH]}')
             print()
-
-
-### Open a directory for user to see or make changes manually.
-###     (directory_path) A path to a directory.
-def openDirectory(directory_path: str):
-    if directory_path == '.ALL' and len(launchbox_media_type_list):
-        directory_path = str(Path(launchbox_media_type_list[0][PATH]).parent)
-    platform = SYS.platform
-    if platform == 'win32':
-        Open(f'explorer "{directory_path}"')
-    elif platform == 'linux':
-        Open(['xdg-open', directory_path])
-    elif platform == 'darwin': # macOS
-        Open(['open', directory_path])
-    else:
-        print(f'WARNING: Failed to open directory. Operating system unknown or unsupported: "{os_platform}"')
 
 
 ### Prints a box pattern around one or more lines of text.
@@ -1870,32 +1935,52 @@ if __name__ == '__main__':
                                                 removeSavedChoice(game[TITLE], disc_path, 'Overwrite')
                                     
                                     # Temporally rename existing file that will later be deleted/overwritten
-                                    # (or reverted back to original name depending on successful file copy).
+                                    # (or reverted back to original name if file copy fails).
                                     if selection == 1:
                                         overwritten = True
-                                        if destination_image in existing_images:
-                                            temp_existing_image = pcsx2_image_folder / f'{new_image_file_name}.tmp'
-                                            n = 0
-                                            while temp_existing_image.exists():
-                                                n += 1
-                                                temp_existing_image = pcsx2_image_folder / f'{new_image_file_name}.tmp{n}'
-                                            destination_image.rename(temp_existing_image)
-                                            
-                                            # Remove the new image from "existing_images" and add the temp file to be later deleted/overwritten.
-                                            i = existing_images.index(destination_image)
-                                            if i > -1:
-                                                existing_images.pop(i)
-                                            existing_images.append(temp_existing_image)
+                                        existing_images = initiateOverwritingOf(destination_image, existing_images)
                                     
-                                    # Rename cover image file... again.
+                                    # Rename cover image file.
                                     elif selection == 2:
-                                        new_cover_image_name = ''
-                                        while new_cover_image_name == '' or new_cover_image_name == destination_image.stem:
-                                            new_cover_image_name = input(f'\nEnter the new cover image name (previous name = "{destination_image.stem}" ): ')
-                                        new_image_file_name = new_cover_image_name + source_image.suffix
-                                        destination_image = pcsx2_image_folder / new_image_file_name
-                                        if destination_image.exists():
-                                            continue # Try Again
+                                        while True:
+                                            new_cover_image_name = input(f'\nEnter the new cover image name (existing name = "{destination_image.stem}"): ')
+                                            
+                                            illegal_characters_found = RE.search(r'\*|\\|\||\:|\"|\<|\>|\/|\?', new_cover_image_name)
+                                             
+                                            # Allow the use of the "show" command here.
+                                            if isCommand(new_cover_image_name, True):
+                                                continue
+                                            
+                                            elif illegal_characters_found:
+                                                print('  One or more illegal file name characters found, please try again.')
+                                                print('  Note: A file name can\'t contain any of the following characters: \\ / : * ? " < > |')
+                                                continue
+                                            
+                                            # No Change
+                                            elif new_cover_image_name == '' or new_cover_image_name == destination_image.stem:
+                                                selection = selectionMenu(
+                                                    ['A blank or identical name was submitted.'],
+                                                    ['Try Again', 'Just Overwrite'], 'Cancel/Skip'
+                                                )
+                                                if selection == 1:
+                                                    continue # Try Again
+                                                elif selection == 2:
+                                                    overwritten = True
+                                                    existing_images = initiateOverwritingOf(destination_image, existing_images)
+                                                    updateSavedChoice(game[TITLE], disc_path, 'Overwrite', 1)
+                                                    break
+                                                else:
+                                                    canceled = True
+                                                    break
+                                            
+                                            # Change
+                                            new_image_file_name = new_cover_image_name + source_image.suffix
+                                            dest_image = pcsx2_image_folder / new_image_file_name
+                                            if dest_image.exists():
+                                                print(f'  This name "{new_cover_image_name}" already exists, please try again.')
+                                            else:
+                                                destination_image = dest_image
+                                                break
                                     
                                     # Cancel copying and skip this game disc.
                                     elif selection == 0:
@@ -2000,23 +2085,7 @@ if __name__ == '__main__':
                 multiple_disc_selections = RE.findall(r'\w\:\\.*?(?=\w\:\\|$)', user_input)
                 
                 # Commands
-                if user_input.lower() == 'help' or user_input.lower() == '?':
-                    printHelp()
-                    continue
-                elif user_input.lower() == 'list launchbox' or user_input.lower() == 'list lb':
-                    printGames('LaunchBox')
-                    continue
-                elif user_input.lower() == 'list pcsx2' or user_input.lower() == 'list ps':
-                    printGames('PCSX2')
-                    continue
-                elif user_input.lower() == 'settings' or user_input.lower() == '*':
-                    showSettingsMenu()
-                    continue
-                elif user_input.lower() == 'show launchbox' or user_input.lower() == 'show lb':
-                    openDirectory(launchbox_image_folder)
-                    continue
-                elif user_input.lower() == 'show pcsx2' or user_input.lower() == 'show ps':
-                    openDirectory(pcsx2_image_folder)
+                if (isCommand(user_input)):
                     continue
                 
                 # Check if a search will use previous user choices/selections.
